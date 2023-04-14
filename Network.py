@@ -94,9 +94,9 @@ class SubsampleLayer(nn.Module):
         return output
 
 
-class ClassifyingCNN(nn.Module):
+class InceptionCNN(nn.Module):
     def __init__(self):
-        super(ClassifyingCNN, self).__init__()
+        super(InceptionCNN, self).__init__()
         self.inception1 = InceptionLayer(in_channels=1, reduce_3x3=32, out_3x3=64, reduce_5x5=32, out_5x5=64,
                                          reduce_7x7=32, out_7x7=64, reduce_9x9=32, out_9x9=64, out_pool=64)
         self.subsample = SubsampleLayer(in_channels=320, reduce_3x3=32, out_3x3=64, reduce_5x5=32, out_5x5=64,
@@ -105,29 +105,6 @@ class ClassifyingCNN(nn.Module):
                                          reduce_7x7=32, out_7x7=64, reduce_9x9=32, out_9x9=64, out_pool=64)
         self.fc1 = nn.Linear(320 * 100, 256)
         self.fc2 = nn.Linear(256, 3)
-
-    def forward(self, x):
-        x = self.inception1(x)
-        x = self.subsample(x)
-        x = self.inception2(x)
-        x = F.dropout(x)
-        x = x.view(-1, x.size(1) * x.size(2))
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
-
-
-class ParameterizingCNN(nn.Module):
-    def __init__(self):
-        super(ParameterizingCNN, self).__init__()
-        self.inception1 = InceptionLayer(in_channels=1, reduce_3x3=32, out_3x3=64, reduce_5x5=32, out_5x5=64,
-                                         reduce_7x7=32, out_7x7=64, reduce_9x9=32, out_9x9=64, out_pool=64)
-        self.subsample = SubsampleLayer(in_channels=320, reduce_3x3=32, out_3x3=64, reduce_5x5=32, out_5x5=64,
-                                        reduce_7x7=32, out_7x7=64, reduce_9x9=32, out_9x9=64, out_pool=64)
-        self.inception2 = InceptionLayer(in_channels=320, reduce_3x3=32, out_3x3=64, reduce_5x5=32, out_5x5=64,
-                                         reduce_7x7=32, out_7x7=64, reduce_9x9=32, out_9x9=64, out_pool=64)
-        self.fc1 = nn.Linear(320 * 100, 256)
-        self.fc2 = nn.Linear(256, 2)
 
     def forward(self, x):
         x = self.inception1(x)

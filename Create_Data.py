@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 class CreateData:
 
-    def __init__(self, l, SNR, RM, width, SNR_I, FD, FD_RM, frequency):
+    def __init__(self, l, amp, RM, width, FD, FD_RM, frequency):
         # Number of spectra and frequency domain parameters
         self.l = l
         self.num_frequency = frequency[2]
@@ -21,45 +21,48 @@ class CreateData:
 
         # Define parameters for real signal
         self.types = np.random.randint(0, 3, l)
-        self.SNR = np.random.uniform(SNR[0], SNR[1], size=(l, 1))
+        self.amp = np.random.uniform(amp[0], amp[1], size=(l, 1))
         self.RM = np.random.uniform(RM[0], RM[1], size=(l, 1)) * self.FWHM
         self.width = np.random.uniform(width[0], width[1], size=(l, 1)) * self.FWHM
         self.theta0 = np.random.uniform(-np.pi / 2, np.pi / 2, size=(l, 1))
 
         # Define parameters for instrumental polarisation
-        self.SNR_I = np.random.uniform(SNR_I[0], SNR_I[1], size=(l, 1))
+        self.amp_I = np.random.uniform(1, 3, size=(l, 1)) * self.amp
         self.RM_I = np.zeros((l, 1))
-        self.width_I = 1 * np.ones((l, 1))
+        self.width_I = np.ones((l, 1))
         self.theta0_I = np.zeros((l, 1))
 
     def generate_noise(self):
         ### Generates Ricean noise in phi ###
-        q_noise = np.random.normal(0, 1, size=(self.l, self.num_FD))
-        u_noise = np.random.normal(0, 1, size=(self.l, self.num_FD))
+        q_noise = np.random.normal(0, 1, size=(self.l, self.num_frequency))
+        u_noise = np.random.normal(0, 1, size=(self.l, self.num_frequency))
         rice_noise = q_noise + 1j * u_noise
         return rice_noise
 
     def add_leakage(self):
-        amp = self.SNR_I * self.sigma
+        amp = self.amp_I
         width = self.width_I
         location = self.RM_I
         phase = self.theta0_I
 
-        condition = (location - width / 2. < self.FD) & (self.FD < location + width / 2.)
-        leakage = np.where(condition, amp, 0) * np.exp(2j * phase)
-        return leakage
+        return amp * np.exp(-1 / (2 * width ** 2) * (self.FD.reshape(1, -1) - location.reshape(-1, 1)) ** 2) * \
+            np.exp(2j * phase)
 
     def add_signal(self):
         types = self.types
 
+        nosignal = (types == 0)
         Gaussian = (types == 1)
         tophat = (types == 2)
 
-        amp = self.SNR * self.sigma
+        amp = self.amp
         width = self.width
-        width[tophat] *= np.sqrt(2 * np.pi)
+        self.width[tophat] *= np.sqrt(2 * np.pi)
         location = self.RM
         phase = self.theta0
+
+        self.amp[nosignal] = 0.
+        self.width[nosignal] = 0.
 
         signal = 1j * np.zeros((self.l, self.num_FD))
 
@@ -85,16 +88,50 @@ class CreateData:
 
     def F_and_P(self):
         ### Generates signal with noise, adds instrumental polarization and returns true F and RM-synthesis F ###
-        rice_noise = self.generate_noise()
-        self.sigma = np.std(np.abs(rice_noise), axis=1).reshape(-1, 1)
-        self.offset = np.mean(np.abs(rice_noise), axis=1).reshape(-1, 1)
-
-        F = rice_noise + self.add_leakage() + self.add_signal()
+        F = self.add_signal() + self.add_leakage()
         P = 1j * np.zeros((self.l, self.num_frequency))
+
         for j, w in enumerate(self.wl2_range):
             M = np.exp(2j * self.FD * w)
             P[:, j] = np.dot(F, M)
+
+
+        """plt.plot(self.wl2_range, np.real(P[0]), '--')
+        plt.plot(self.wl2_range, np.imag(P[0]), '--')
+        plt.plot(self.wl2_range, np.abs(P[0]), color='k')
+        plt.xticks([])
+        plt.yticks([])
+        plt.savefig('Example_spectrum_P.png', transparent=True)
+        plt.show()"""
+
+        P += self.generate_noise() * 50
+
         Ftilde = self.RMsynthesis(P)
+
+        """plt.plot(self.FD, np.real(F[0]), '--')
+        plt.plot(self.FD, np.imag(F[0]), '--')
+        plt.plot(self.FD, np.abs(F[0]), color='k')
+        plt.xticks([])
+        plt.yticks([])
+        plt.savefig('Example_spectrum_F.png', transparent=True)
+        plt.show()
+
+        plt.plot(self.FD_RM, np.real(Ftilde[0]), '--')
+        plt.plot(self.FD_RM, np.imag(Ftilde[0]), '--')
+        plt.plot(self.FD_RM, np.abs(Ftilde[0]), color='k')
+        plt.xticks([])
+        plt.yticks([])
+        plt.savefig('Example_spectrum_Ftilde.png', transparent=True)
+        plt.show()
+
+        plt.plot(self.wl2_range, np.real(P[0]), '--')
+        plt.plot(self.wl2_range, np.imag(P[0]), '--')
+        plt.plot(self.wl2_range, np.abs(P[0]), color='k')
+        plt.xticks([])
+        plt.yticks([])
+        plt.savefig('Example_spectrum_P_noise.png', transparent=True)
+        plt.show()"""
+
         return F, Ftilde
 
     def save_data(self, test=False):
@@ -103,18 +140,24 @@ class CreateData:
 
         data_true, data_RM = torch.tensor(data_true), torch.tensor(data_RM)
 
-        amplitudes = torch.tensor(self.SNR * self.sigma)
+        amplitude = torch.tensor(self.amp)
         width = torch.tensor(self.width)
+        location = torch.tensor(self.RM)
 
         dataset = [torch.abs(data_RM).unsqueeze(dim=1),
-                   torch.cat((amplitudes, width), dim=1),
+                   torch.cat((amplitude, width, location), dim=1),
                    torch.LongTensor(self.types)]
 
+        print(torch.abs(data_RM).unsqueeze(dim=1).shape)
+
+        dataset_RM = [torch.abs(data_true), torch.abs(data_RM)]
+
         if test:
+            torch.save(dataset_RM, 'Data/data_RM.npz')
             torch.save(dataset, 'Data/data_test.npz')
         else:
             torch.save(dataset, 'Data/data_train.npz')
 
 
-CreateData(l=10000, SNR=[5, 20], RM=[-10, 10], width=[.2, 1.], SNR_I=[5, 12], FD=[-100, 100, 2000],
-           FD_RM=[-100, 100, 200], frequency=[350e6, 1050e6, 700]).save_data(test=True)
+CreateData(l=100, amp=[0.1, 15], RM=[-10, 10], width=[.1, 1.], FD=[-100, 100, 4000],
+           FD_RM=[-100, 100, 200], frequency=[350e6, 1050e6, 700]).save_data(test=False)

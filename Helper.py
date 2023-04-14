@@ -66,30 +66,19 @@ class CustomTensorDataset(Dataset):
 class Customloss(nn.Module):
     def __init__(self):
         super(Customloss, self).__init__()
-        self.low_weight, self.high_weight = 1, 2
 
-    def forward(self, y_pred, y_true, SNR):
-        # Extract predicted Gaussian parameters
-        amp_width_pred, RM_base_pred = y_pred[:, :2], y_pred[:, 2:4]
+    def forward(self, y_pred, y_true):
+        # Extract predicted parameters
+        amp_pred, width_pred, RM_pred = y_pred[:, 0], y_pred[:, 1], y_pred[:, 2]
 
-        # Extract true Gaussian parameters
-        amp_width_true, RM_base_true = y_true[:, :2], y_true[:, 2:4]
+        # Extract true parameters
+        amp_true, width_true, RM_true = y_true[:, 0], y_true[:, 1], y_true[:, 2]
 
-        n = int(len(SNR) / 2)
-        weights = torch.hstack((torch.linspace(self.low_weight, .1, n), torch.linspace(.1, self.high_weight, n)))
+        loss_amp = F.mse_loss(amp_pred, amp_true)
 
-        thresholds = torch.linspace(3, 12, len(SNR))
+        loss_width = F.mse_loss(width_pred, width_true)
 
-        index = np.argmin(torch.abs(SNR[:, None] - thresholds), axis=1)
-
-        weight = weights[index].reshape(-1, 1)
-
-        # Define loss functions for pairs of parameters
-
-        loss_amp_width = (F.mse_loss(amp_width_pred, amp_width_true, reduction='none') * weight).mean()
-
-        loss_RM_base = F.mse_loss(RM_base_pred, RM_base_true)
+        loss_RM = F.mse_loss(RM_pred, RM_true)
 
         # Combine individual loss functions using weighted sum
-        loss = (loss_amp_width + loss_RM_base).mean()
-        return loss
+        return (loss_amp + loss_width + 1/10 * loss_RM).mean()

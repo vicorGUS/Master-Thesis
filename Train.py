@@ -9,7 +9,7 @@ def training_loop(model, optimizer, loss_fn, train_loader, val_loader, classifyi
                           else "cpu")
     model.to(device)
     train_losses, val_losses = [], []
-    best_loss = 100
+    best_loss = np.inf
     for epoch in range(1, num_epochs + 1):
         model, train_loss, train_acc = train_epoch(model,
                                                    optimizer,
