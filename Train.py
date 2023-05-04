@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from sklearn.metrics import accuracy_score
 
 
 def training_loop(model, optimizer, loss_fn, train_loader, val_loader, classifying, num_epochs):
@@ -8,7 +7,7 @@ def training_loop(model, optimizer, loss_fn, train_loader, val_loader, classifyi
     device = torch.device("cuda" if torch.cuda.is_available()
                           else "cpu")
     model.to(device)
-    train_losses, val_losses = [], []
+    train_losses, val_losses, train_accs, val_accs = [], [], [], []
     best_loss = np.inf
     for epoch in range(1, num_epochs + 1):
         model, train_loss, train_acc = train_epoch(model,
@@ -30,10 +29,13 @@ def training_loop(model, optimizer, loss_fn, train_loader, val_loader, classifyi
                   f"Val. loss: {val_loss:.3f}")
         train_losses.append(sum(train_loss) / len(train_loss))
         val_losses.append(val_loss)
+        if classifying:
+            train_accs.append((sum(train_acc) / len(train_acc)).cpu().numpy())
+            val_accs.append(val_acc.cpu().numpy())
         if val_loss <= best_loss:
             best_loss = val_loss
             best_model = model
-    return best_model, train_losses, val_losses
+    return best_model, train_losses, val_losses, train_accs, val_accs
 
 
 def train_epoch(model, optimizer, loss_fn, train_loader, device, classifying):
@@ -49,7 +51,7 @@ def train_epoch(model, optimizer, loss_fn, train_loader, device, classifying):
         loss = loss_fn(z, labels)
         loss.backward()
         if classifying:
-            train_acc_batches.append(accuracy_score(labels, torch.argmax(z, dim=1)))
+            train_acc_batches.append(torch.sum(labels == torch.argmax(z, dim=1)) / len(labels))
         optimizer.step()
         train_loss_batches.append(loss.item())
 
@@ -67,5 +69,5 @@ def validate(model, loss_fn, val_loader, device, classifying):
             batch_loss = loss_fn(z, labels)
             val_loss_cum += batch_loss.item()
             if classifying:
-                val_acc_cum += accuracy_score(labels, torch.argmax(z, dim=1))
+                val_acc_cum += torch.sum(labels == torch.argmax(z, dim=1)) / len(labels)
     return val_loss_cum / len(val_loader), val_acc_cum / len(val_loader)

@@ -8,13 +8,10 @@ import torch.nn.functional as F
 
 class LearningCurvePlot:
 
-    def __init__(self, title=None, xlabel='Epoch'):
+    def __init__(self, title=None, metrics='Loss'):
         self.fig, self.ax = plt.subplots()
-        self.ax.set_ylabel('Loss')
-        if xlabel == 'Epoch':
-            self.ax.set_xlabel('Epoch')
-        else:
-            self.ax.set_xlabel(f'{xlabel}')
+        self.ax.set_ylabel(metrics)
+        self.ax.set_xlabel('Epoch')
 
         if title is not None:
             self.ax.set_title(title)
